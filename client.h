@@ -35,14 +35,12 @@ client_activate_surface(struct wlr_surface *s, int activated)
 static inline void
 client_for_each_surface(Client *c, wlr_surface_iterator_func_t fn, void *data)
 {
+	wlr_surface_for_each_surface(client_surface(c), fn, data);
 #ifdef XWAYLAND
-	if (client_is_x11(c)) {
-		wlr_surface_for_each_surface(c->surface.xwayland->surface,
-				fn, data);
+	if (client_is_x11(c))
 		return;
-	}
 #endif
-	wlr_xdg_surface_for_each_surface(c->surface.xdg, fn, data);
+	wlr_xdg_surface_for_each_popup_surface(c->surface.xdg, fn, data);
 }
 
 static inline const char *
