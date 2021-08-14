@@ -93,6 +93,7 @@ typedef struct {
 		struct wlr_xdg_surface *xdg;
 		struct wlr_xwayland_surface *xwayland;
 	} surface;
+	struct wlr_scene_surface *scene;
 	struct wl_listener commit;
 	struct wl_listener map;
 	struct wl_listener unmap;
@@ -305,6 +306,7 @@ static void zoom(const Arg *arg);
 static const char broken[] = "broken";
 static struct wl_display *dpy;
 static struct wlr_backend *backend;
+static struct wlr_scene *scene;
 static struct wlr_renderer *drw;
 static struct wlr_compositor *compositor;
 
@@ -1745,42 +1747,10 @@ rendermon(struct wl_listener *listener, void *data)
 		}
 	}
 
-	/* HACK: This loop is the simplest way to handle ephemeral pageflip
-	 * failures but probably not the best. Revisit if damage tracking is
-	 * added. */
-	do {
-		/* wlr_output_attach_render makes the OpenGL context current. */
-		if (!wlr_output_attach_render(m->wlr_output, NULL))
-			return;
-
-		if (render) {
-			/* Begin the renderer (calls glViewport and some other GL sanity checks) */
-			wlr_renderer_begin(drw, m->wlr_output->width, m->wlr_output->height);
-			wlr_renderer_clear(drw, rootcolor);
-
-			renderlayer(&m->layers[ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND], &now);
-			renderlayer(&m->layers[ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM], &now);
-			renderclients(m, &now);
-#ifdef XWAYLAND
-			renderindependents(m->wlr_output, &now);
-#endif
-			renderlayer(&m->layers[ZWLR_LAYER_SHELL_V1_LAYER_TOP], &now);
-			renderlayer(&m->layers[ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY], &now);
-
-			/* Hardware cursors are rendered by the GPU on a separate plane, and can be
-			 * moved around without re-rendering what's beneath them - which is more
-			 * efficient. However, not all hardware supports hardware cursors. For this
-			 * reason, wlroots provides a software fallback, which we ask it to render
-			 * here. wlr_cursor handles configuring hardware vs software cursors for you,
-			 * and this function is a no-op when hardware cursors are in use. */
-			wlr_output_render_software_cursors(m->wlr_output, NULL);
-
-			/* Conclude rendering and swap the buffers, showing the final frame
-			 * on-screen. */
-			wlr_renderer_end(drw);
-		}
-
-	} while (!wlr_output_commit(m->wlr_output));
+	if (render)
+		/* Render the scene at (-mx, -my) to get this monitor's view.
+		 * wlroots will not render windows falling outside the box. */
+		wlr_scene_commit_output(scene, m->wlr_output, -m->m.x, -m->m.y);
 }
 
 void
@@ -2000,6 +1970,9 @@ setup(void)
 	 * don't). */
 	if (!(backend = wlr_backend_autocreate(dpy)))
 		BARF("couldn't create backend");
+
+	/* Initialize the scene graph used to lay out windows */
+	scene = wlr_scene_create();
 
 	/* If we don't provide a renderer, autocreate makes a GLES2 renderer for us.
 	 * The renderer is responsible for defining the various pixel formats it
@@ -2380,6 +2353,7 @@ xytoclient(double x, double y)
 {
 	/* Find the topmost visible client (if any) at point (x, y), including
 	 * borders. This relies on stack being ordered from top to bottom. */
+	// XXX use wlr_scene_node_surface_at
 	Client *c;
 	wl_list_for_each(c, &stack, slink)
 		if (VISIBLEON(c, c->mon) && wlr_box_contains_point(&c->geom, x, y))
@@ -2392,6 +2366,7 @@ xytolayersurface(struct wl_list *layer_surfaces, double x, double y,
 		double *sx, double *sy)
 {
 	LayerSurface *layersurface;
+	// XXX also use wlr_scene_node_surface_at?
 	wl_list_for_each_reverse(layersurface, layer_surfaces, link) {
 		struct wlr_surface *sub;
 		if (!layersurface->layer_surface->mapped)
