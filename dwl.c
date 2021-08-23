@@ -65,7 +65,7 @@
 
 /* enums */
 enum { CurNormal, CurMove, CurResize }; /* cursor */
-enum { LyrUnderlay, LyrBottom, LyrTile, LyrFloat, LyrTop, LyrOverlay, NUM_LAYERS }; /* scene layers */
+enum { LyrBg, LyrBottom, LyrTop, LyrOverlay, LyrTile, LyrFloat, NUM_LAYERS }; /* scene layers */
 #ifdef XWAYLAND
 enum { NetWMWindowTypeDialog, NetWMWindowTypeSplash, NetWMWindowTypeToolbar,
 	NetWMWindowTypeUtility, NetLast }; /* EWMH atoms */
@@ -143,6 +143,7 @@ typedef struct {
 
 typedef struct {
 	struct wlr_layer_surface_v1 *layer_surface;
+	struct wlr_scene_surface *scene;
 	struct wl_list link;
 
 	struct wl_listener destroy;
@@ -564,6 +565,7 @@ arrangelayer(Monitor *m, struct wl_list *list, struct wlr_box *usable_area, int 
 			applyexclusive(usable_area, state->anchor, state->exclusive_zone,
 					state->margin.top, state->margin.right,
 					state->margin.bottom, state->margin.left);
+		wlr_scene_node_set_position(&layersurface->scene->node, box.x, box.y);
 		wlr_layer_surface_v1_configure(wlr_layer_surface, box.width, box.height);
 	}
 }
@@ -928,8 +930,12 @@ createlayersurface(struct wl_listener *listener, void *data)
 
 	layersurface->layer_surface = wlr_layer_surface;
 	wlr_layer_surface->data = layersurface;
-
 	m = wlr_layer_surface->output->data;
+
+	layersurface->scene = wlr_scene_surface_create(
+			layers[wlr_layer_surface->client_pending.layer],
+			wlr_layer_surface->surface);
+
 	wl_list_insert(&m->layers[wlr_layer_surface->client_pending.layer],
 			&layersurface->link);
 
@@ -1851,8 +1857,6 @@ setsel(struct wl_listener *listener, void *data)
 void
 setup(void)
 {
-	int l;
-
 	/* The Wayland display is managed by libwayland. It handles accepting
 	 * clients from the Unix socket, manging Wayland globals, and so on. */
 	dpy = wl_display_create();
@@ -1875,8 +1879,12 @@ setup(void)
 
 	/* Initialize the scene graph used to lay out windows */
 	scene = wlr_scene_create();
-	for (l = 0; l < NUM_LAYERS; l++)
-		layers[l] = wlr_scene_node_create(&scene->node);
+	layers[LyrBg] = wlr_scene_node_create(&scene->node);
+	layers[LyrBottom] = wlr_scene_node_create(&scene->node);
+	layers[LyrTile] = wlr_scene_node_create(&scene->node);
+	layers[LyrFloat] = wlr_scene_node_create(&scene->node);
+	layers[LyrTop] = wlr_scene_node_create(&scene->node);
+	layers[LyrOverlay] = wlr_scene_node_create(&scene->node);
 	/* XXX just testing */
 	wlr_scene_node_set_position(
 			&wlr_scene_rect_create(layers[LyrTop], 20, 20, (float[]) {1, 1, 0.7, 1})->node,
