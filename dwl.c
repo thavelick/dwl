@@ -314,6 +314,7 @@ static struct wlr_xdg_shell *xdg_shell;
 static struct wlr_xdg_activation_v1 *activation;
 static struct wl_list clients; /* tiling order */
 static struct wl_list fstack;  /* focus order */
+/* XXX we should be able to remove this with scene-graph */
 static struct wl_list stack;   /* stacking z-order */
 static struct wl_list independents;
 static struct wlr_idle *idle;
