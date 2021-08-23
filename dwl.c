@@ -65,6 +65,7 @@
 
 /* enums */
 enum { CurNormal, CurMove, CurResize }; /* cursor */
+enum { LyrUnderlay, LyrBottom, LyrTile, LyrFloat, LyrTop, LyrOverlay, NUM_LAYERS }; /* scene layers */
 #ifdef XWAYLAND
 enum { NetWMWindowTypeDialog, NetWMWindowTypeSplash, NetWMWindowTypeToolbar,
 	NetWMWindowTypeUtility, NetLast }; /* EWMH atoms */
@@ -305,6 +306,7 @@ static const char broken[] = "broken";
 static struct wl_display *dpy;
 static struct wlr_backend *backend;
 static struct wlr_scene *scene;
+static struct wlr_scene_node *layers[NUM_LAYERS];
 static struct wlr_renderer *drw;
 static struct wlr_compositor *compositor;
 
@@ -1298,19 +1300,19 @@ mapnotify(struct wl_listener *listener, void *data)
 	struct wlr_scene_surface *scene_surface;
 
 	/* Create scene node for this client */
-	c->scene = wlr_scene_node_create(&scene->node);
+	c->scene = wlr_scene_node_create(layers[LyrTile]);
 	scene_surface = wlr_scene_surface_create(c->scene, client_surface(c));
 
 	if (client_is_unmanaged(c)) {
-		/* No border */
-		wlr_scene_node_set_position(&scene_surface->node, 0, 0);
+		/* Floating, no border */
+		wlr_scene_node_reparent(c->scene, layers[LyrFloat]);
 
 		/* Insert this independent into independents lists. */
 		wl_list_insert(&independents, &c->link);
 		return;
 	}
 
-	/* Initialize client geometry */
+	/* Initialize client geometry with room for border */
 	client_set_tiled(c, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
 	client_get_geometry(c, &c->geom);
 	c->geom.width += 2 * c->bw;
@@ -1848,6 +1850,8 @@ setsel(struct wl_listener *listener, void *data)
 void
 setup(void)
 {
+	int l;
+
 	/* The Wayland display is managed by libwayland. It handles accepting
 	 * clients from the Unix socket, manging Wayland globals, and so on. */
 	dpy = wl_display_create();
@@ -1870,9 +1874,11 @@ setup(void)
 
 	/* Initialize the scene graph used to lay out windows */
 	scene = wlr_scene_create();
+	for (l = 0; l < NUM_LAYERS; l++)
+		layers[l] = wlr_scene_node_create(&scene->node);
 	/* XXX just testing */
 	wlr_scene_node_set_position(
-			&wlr_scene_rect_create(&scene->node, 20, 20, (float[]) {1, 1, 0.7, 1})->node,
+			&wlr_scene_rect_create(layers[LyrTop], 20, 20, (float[]) {1, 1, 0.7, 1})->node,
 			20, 20);
 
 	/* If we don't provide a renderer, autocreate makes a GLES2 renderer for us.
