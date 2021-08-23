@@ -768,6 +768,8 @@ commitlayersurfacenotify(struct wl_listener *listener, void *data)
 	arrangelayers(m);
 
 	if (layersurface->layer != wlr_layer_surface->current.layer) {
+		wlr_scene_node_reparent(&layersurface->scene->node,
+				layers[wlr_layer_surface->current.layer]);
 		wl_list_remove(&layersurface->link);
 		wl_list_insert(&m->layers[wlr_layer_surface->current.layer],
 			&layersurface->link);
