@@ -1886,10 +1886,6 @@ setup(void)
 	layers[LyrFloat] = wlr_scene_node_create(&scene->node);
 	layers[LyrTop] = wlr_scene_node_create(&scene->node);
 	layers[LyrOverlay] = wlr_scene_node_create(&scene->node);
-	/* XXX just testing */
-	wlr_scene_node_set_position(
-			&wlr_scene_rect_create(layers[LyrTop], 20, 20, (float[]) {1, 1, 0.7, 1})->node,
-			20, 20);
 
 	/* If we don't provide a renderer, autocreate makes a GLES2 renderer for us.
 	 * The renderer is responsible for defining the various pixel formats it
