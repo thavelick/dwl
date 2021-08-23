@@ -486,6 +486,10 @@ applyrules(Client *c)
 void
 arrange(Monitor *m)
 {
+	Client *c;
+	wl_list_for_each(c, &clients, link)
+		wlr_scene_node_set_enabled(c->scene, VISIBLEON(c, c->mon));
+
 	if (m->lt[m->sellt]->arrange)
 		m->lt[m->sellt]->arrange(m);
 	/* TODO recheck pointer focus here... or in resize()? */
