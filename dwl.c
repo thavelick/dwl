@@ -361,7 +361,6 @@ static void activatex11(struct wl_listener *listener, void *data);
 static void configurex11(struct wl_listener *listener, void *data);
 static void createnotifyx11(struct wl_listener *listener, void *data);
 static Atom getatom(xcb_connection_t *xc, const char *name);
-static void renderindependents(struct wlr_output *output, struct timespec *now);
 static void xwaylandready(struct wl_listener *listener, void *data);
 static Client *xytoindependent(double x, double y);
 static struct wl_listener new_xwayland_surface = {.notify = createnotifyx11};
@@ -1296,9 +1295,16 @@ mapnotify(struct wl_listener *listener, void *data)
 {
 	/* Called when the surface is mapped, or ready to display on-screen. */
 	Client *c = wl_container_of(listener, c, map);
-	struct wlr_scene_surface *wss;
+	struct wlr_scene_surface *scene_surface;
+
+	/* Create scene node for this client */
+	c->scene = wlr_scene_node_create(&scene->node);
+	scene_surface = wlr_scene_surface_create(c->scene, client_surface(c));
 
 	if (client_is_unmanaged(c)) {
+		/* No border */
+		wlr_scene_node_set_position(&scene_surface->node, 0, 0);
+
 		/* Insert this independent into independents lists. */
 		wl_list_insert(&independents, &c->link);
 		return;
@@ -1309,11 +1315,7 @@ mapnotify(struct wl_listener *listener, void *data)
 	client_get_geometry(c, &c->geom);
 	c->geom.width += 2 * c->bw;
 	c->geom.height += 2 * c->bw;
-
-	/* Create scene node for this client */
-	c->scene = wlr_scene_node_create(&scene->node);
-	wss = wlr_scene_surface_create(c->scene, client_surface(c));
-	wlr_scene_node_set_position(&wss->node, c->bw, c->bw);
+	wlr_scene_node_set_position(&scene_surface->node, c->bw, c->bw);
 
 	/* Insert this client into client lists. */
 	wl_list_insert(&clients, &c->link);
@@ -2382,31 +2384,6 @@ getatom(xcb_connection_t *xc, const char *name)
 	free(reply);
 
 	return atom;
-}
-
-void
-renderindependents(struct wlr_output *output, struct timespec *now)
-{
-	Client *c;
-	struct render_data rdata;
-	struct wlr_box geom;
-
-	wl_list_for_each_reverse(c, &independents, link) {
-		geom.x = c->surface.xwayland->x;
-		geom.y = c->surface.xwayland->y;
-		geom.width = c->surface.xwayland->width;
-		geom.height = c->surface.xwayland->height;
-
-		/* Only render visible clients which show on this output */
-		if (!wlr_output_layout_intersects(output_layout, output, &geom))
-			continue;
-
-		rdata.output = output;
-		rdata.when = now;
-		rdata.x = c->surface.xwayland->x;
-		rdata.y = c->surface.xwayland->y;
-		wlr_surface_for_each_surface(c->surface.xwayland->surface, render, &rdata);
-	}
 }
 
 void
