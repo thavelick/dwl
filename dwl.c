@@ -32,6 +32,7 @@
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_primary_selection_v1.h>
 #include <wlr/types/wlr_screencopy_v1.h>
+#include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_server_decoration.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_viewporter.h>
@@ -93,7 +94,7 @@ typedef struct {
 		struct wlr_xdg_surface *xdg;
 		struct wlr_xwayland_surface *xwayland;
 	} surface;
-	struct wlr_scene_surface *scene;
+	struct wlr_scene_node *scene;
 	struct wl_listener commit;
 	struct wl_listener map;
 	struct wl_listener unmap;
@@ -555,7 +556,7 @@ arrangelayer(Monitor *m, struct wl_list *list, struct wlr_box *usable_area, int 
 			box.y -= state->margin.bottom;
 		}
 		if (box.width < 0 || box.height < 0) {
-			wlr_layer_surface_v1_close(wlr_layer_surface);
+			wlr_layer_surface_v1_destroy(wlr_layer_surface);
 			continue;
 		}
 		layersurface->geo = box;
@@ -1731,26 +1732,38 @@ rendermon(struct wl_listener *listener, void *data)
 {
 	Client *c;
 	int render = 1;
+	int width, height;
+	struct timespec now;
 
 	/* This function is called every time an output is ready to display a frame,
 	 * generally at the output's refresh rate (e.g. 60Hz). */
 	Monitor *m = wl_container_of(listener, m, frame);
 
-	struct timespec now;
-	clock_gettime(CLOCK_MONOTONIC, &now);
-
 	/* Do not render if any XDG clients have an outstanding resize. */
-	wl_list_for_each(c, &stack, slink) {
-		if (c->resize) {
-			wlr_surface_send_frame_done(client_surface(c), &now);
+	wl_list_for_each(c, &stack, slink)
+		if (c->resize)
 			render = 0;
-		}
-	}
 
-	if (render)
+	/* wlr_output_attach_render makes the OpenGL context current. */
+	if (!wlr_output_attach_render(m->wlr_output, NULL))
+		return;
+
+	if (render) {
+		wlr_output_effective_resolution(m->wlr_output, &width, &height);
+		wlr_renderer_begin(drw, width, height);
+		wlr_renderer_clear(drw, rootcolor);
+
 		/* Render the scene at (-mx, -my) to get this monitor's view.
 		 * wlroots will not render windows falling outside the box. */
-		wlr_scene_commit_output(scene, m->wlr_output, -m->m.x, -m->m.y);
+		wlr_scene_render_output(scene, m->wlr_output, -m->m.x, -m->m.y, NULL);
+		wlr_renderer_end(drw);
+	}
+	if (!wlr_output_commit(m->wlr_output))
+		return;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	wl_list_for_each(c, &stack, slink)
+		wlr_surface_send_frame_done(client_surface(c), &now);
 }
 
 void
@@ -1951,6 +1964,8 @@ setsel(struct wl_listener *listener, void *data)
 void
 setup(void)
 {
+	struct wlr_scene_rect *rect;
+
 	/* The Wayland display is managed by libwayland. It handles accepting
 	 * clients from the Unix socket, manging Wayland globals, and so on. */
 	dpy = wl_display_create();
@@ -1973,6 +1988,9 @@ setup(void)
 
 	/* Initialize the scene graph used to lay out windows */
 	scene = wlr_scene_create();
+	wlr_scene_node_set_position(
+			&wlr_scene_rect_create(&scene->node, 20, 20, (float[]) {1, 1, 0.7, 1})->node,
+			20, 20);
 
 	/* If we don't provide a renderer, autocreate makes a GLES2 renderer for us.
 	 * The renderer is responsible for defining the various pixel formats it
