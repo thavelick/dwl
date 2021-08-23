@@ -1732,38 +1732,44 @@ rendermon(struct wl_listener *listener, void *data)
 {
 	Client *c;
 	int render = 1;
-	int width, height;
-	struct timespec now;
 
 	/* This function is called every time an output is ready to display a frame,
 	 * generally at the output's refresh rate (e.g. 60Hz). */
 	Monitor *m = wl_container_of(listener, m, frame);
 
-	/* Do not render if any XDG clients have an outstanding resize. */
-	wl_list_for_each(c, &stack, slink)
-		if (c->resize)
-			render = 0;
-
-	/* wlr_output_attach_render makes the OpenGL context current. */
-	if (!wlr_output_attach_render(m->wlr_output, NULL))
-		return;
-
-	if (render) {
-		wlr_output_effective_resolution(m->wlr_output, &width, &height);
-		wlr_renderer_begin(drw, width, height);
-		wlr_renderer_clear(drw, rootcolor);
-
-		/* Render the scene at (-mx, -my) to get this monitor's view.
-		 * wlroots will not render windows falling outside the box. */
-		wlr_scene_render_output(scene, m->wlr_output, -m->m.x, -m->m.y, NULL);
-		wlr_renderer_end(drw);
-	}
-	if (!wlr_output_commit(m->wlr_output))
-		return;
-
+	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
-	wl_list_for_each(c, &stack, slink)
-		wlr_surface_send_frame_done(client_surface(c), &now);
+
+	/* Do not render if any XDG clients have an outstanding resize. */
+	wl_list_for_each(c, &stack, slink) {
+		if (c->resize) {
+			wlr_surface_send_frame_done(client_surface(c), &now);
+			render = 0;
+		}
+	}
+
+	/* HACK: This loop is the simplest way to handle ephemeral pageflip
+	 * failures but probably not the best. Revisit if damage tracking is
+	 * added. */
+	do {
+		/* wlr_output_attach_render makes the OpenGL context current. */
+		if (!wlr_output_attach_render(m->wlr_output, NULL))
+			return;
+
+		if (render) {
+			/* Begin the renderer (calls glViewport and some other GL sanity checks) */
+			wlr_renderer_begin(drw, m->wlr_output->width, m->wlr_output->height);
+			wlr_renderer_clear(drw, rootcolor);
+
+			/* Render the scene at (-mx, -my) to get this monitor's view.
+			 * wlroots will not render windows falling outside the box. */
+			wlr_scene_render_output(scene, m->wlr_output, -m->m.x, -m->m.y, NULL);
+
+			/* Conclude rendering and swap the buffers, showing the final frame
+			 * on-screen. */
+			wlr_renderer_end(drw);
+		}
+	} while (!wlr_output_commit(m->wlr_output));
 }
 
 void
