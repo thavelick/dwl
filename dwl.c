@@ -1792,6 +1792,7 @@ resize(Client *c, int x, int y, int w, int h, int interact)
 	c->geom.height = h;
 	applybounds(c, bbox);
 	/* wlroots makes this a no-op if size hasn't changed */
+	wlr_scene_node_set_position(c->scene, x, y);
 	c->resize = client_set_size(c, c->geom.width - 2 * c->bw,
 			c->geom.height - 2 * c->bw);
 }
