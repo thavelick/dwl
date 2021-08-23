@@ -95,6 +95,7 @@ typedef struct {
 		struct wlr_xwayland_surface *xwayland;
 	} surface;
 	struct wlr_scene_node *scene;
+	struct wlr_scene_rect *border[4];
 	struct wl_listener commit;
 	struct wl_listener map;
 	struct wl_listener unmap;
@@ -1328,6 +1329,15 @@ mapnotify(struct wl_listener *listener, void *data)
 	c->geom.height += 2 * c->bw;
 	wlr_scene_node_set_position(&scene_surface->node, c->bw, c->bw);
 
+	/* Border (top, bottom, left, right) */
+	c->border[0] = wlr_scene_rect_create(c->scene, c->geom.width, c->bw, bordercolor);
+	c->border[1] = wlr_scene_rect_create(c->scene, c->geom.width, c->bw, bordercolor);
+	c->border[2] = wlr_scene_rect_create(c->scene, c->bw, c->geom.height - 2 * c->bw, bordercolor);
+	c->border[3] = wlr_scene_rect_create(c->scene, c->bw, c->geom.height - 2 * c->bw, bordercolor);
+	wlr_scene_node_set_position(&c->border[1]->node, 0, c->geom.height - c->bw);
+	wlr_scene_node_set_position(&c->border[2]->node, 0, c->bw);
+	wlr_scene_node_set_position(&c->border[3]->node, c->geom.width - c->bw, c->bw);
+
 	/* Insert this client into client lists. */
 	wl_list_insert(&clients, &c->link);
 	wl_list_insert(&fstack, &c->flink);
@@ -1673,8 +1683,12 @@ resize(Client *c, int x, int y, int w, int h, int interact)
 	c->geom.width = w;
 	c->geom.height = h;
 	applybounds(c, bbox);
-	/* wlroots makes this a no-op if size hasn't changed */
+	c->border[0]->width = c->border[1]->width = c->geom.width;
+	c->border[2]->height = c->border[3]->height = c->geom.height - 2 * c->bw;
+	wlr_scene_node_set_position(&c->border[1]->node, 0, c->geom.height - c->bw);
+	wlr_scene_node_set_position(&c->border[3]->node, c->geom.width - c->bw, c->bw);
 	wlr_scene_node_set_position(c->scene, x, y);
+	/* wlroots makes this a no-op if size hasn't changed */
 	c->resize = client_set_size(c, c->geom.width - 2 * c->bw,
 			c->geom.height - 2 * c->bw);
 }
