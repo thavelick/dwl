@@ -90,7 +90,6 @@ typedef struct Monitor Monitor;
 typedef struct {
 	struct wl_list link;
 	struct wl_list flink;
-	struct wl_list slink;
 	union {
 		struct wlr_xdg_surface *xdg;
 		struct wlr_xwayland_surface *xwayland;
@@ -315,8 +314,6 @@ static struct wlr_xdg_shell *xdg_shell;
 static struct wlr_xdg_activation_v1 *activation;
 static struct wl_list clients; /* tiling order */
 static struct wl_list fstack;  /* focus order */
-/* XXX we should be able to remove this with scene-graph */
-static struct wl_list stack;   /* stacking z-order */
 static struct wl_list independents;
 static struct wlr_idle *idle;
 static struct wlr_layer_shell_v1 *layer_shell;
@@ -937,6 +934,7 @@ createlayersurface(struct wl_listener *listener, void *data)
 	layersurface->scene = wlr_scene_surface_create(
 			layers[wlr_layer_surface->client_pending.layer],
 			wlr_layer_surface->surface);
+	layersurface->scene->node.data = layersurface;
 
 	wl_list_insert(&m->layers[wlr_layer_surface->client_pending.layer],
 			&layersurface->link);
@@ -1079,8 +1077,9 @@ focusclient(Client *c, int lift)
 
 	/* Raise client in stacking order if requested */
 	if (c && lift) {
-		wl_list_remove(&c->slink);
-		wl_list_insert(&stack, &c->slink);
+		/* This isn't easy to do with the current API/asserts */
+		wl_list_remove(&c->scene->state.link);
+		wl_list_insert(c->scene->parent->state.children.prev, &c->scene->state.link);
 	}
 
 	if (c && client_surface(c) == old)
@@ -1311,6 +1310,7 @@ mapnotify(struct wl_listener *listener, void *data)
 	/* Create scene node for this client */
 	c->scene = wlr_scene_node_create(layers[LyrTile]);
 	scene_surface = wlr_scene_surface_create(c->scene, client_surface(c));
+	scene_surface->node.data = c;
 
 	if (client_is_unmanaged(c)) {
 		/* Floating, no border */
@@ -1331,7 +1331,6 @@ mapnotify(struct wl_listener *listener, void *data)
 	/* Insert this client into client lists. */
 	wl_list_insert(&clients, &c->link);
 	wl_list_insert(&fstack, &c->flink);
-	wl_list_insert(&stack, &c->slink);
 
 	/* Set initial monitor, tags, floating status, and focus */
 	applyrules(c);
@@ -1629,7 +1628,7 @@ rendermon(struct wl_listener *listener, void *data)
 	clock_gettime(CLOCK_MONOTONIC, &now);
 
 	/* Do not render if any XDG clients have an outstanding resize. */
-	wl_list_for_each(c, &stack, slink)
+	wl_list_for_each(c, &clients, link)
 		skip = skip || c->resize;
 
 	/* HACK: This loop is the simplest way to handle ephemeral pageflip
@@ -1656,7 +1655,7 @@ rendermon(struct wl_listener *listener, void *data)
 	} while (!wlr_output_commit(m->wlr_output));
 
 	/* Let clients know a frame has been rendered */
-	wl_list_for_each(c, &stack, slink)
+	wl_list_for_each(c, &clients, link)
 		wlr_surface_send_frame_done(client_surface(c), &now);
 }
 
@@ -1936,7 +1935,6 @@ setup(void)
 	 */
 	wl_list_init(&clients);
 	wl_list_init(&fstack);
-	wl_list_init(&stack);
 	wl_list_init(&independents);
 
 	idle = wlr_idle_create(dpy);
@@ -2182,7 +2180,6 @@ unmapnotify(struct wl_listener *listener, void *data)
 
 	setmon(c, NULL, 0);
 	wl_list_remove(&c->flink);
-	wl_list_remove(&c->slink);
 	wlr_scene_node_destroy(c->scene);
 }
 
@@ -2272,12 +2269,14 @@ xytoclient(double x, double y)
 {
 	/* Find the topmost visible client (if any) at point (x, y), including
 	 * borders. This relies on stack being ordered from top to bottom. */
-	// XXX use wlr_scene_node_surface_at
-	Client *c;
-	wl_list_for_each(c, &stack, slink)
-		if (VISIBLEON(c, c->mon) && wlr_box_contains_point(&c->geom, x, y))
-			return c;
-	return NULL;
+	double nx, ny;
+	struct wlr_scene_node *node;
+
+	if (!(node = wlr_scene_node_at(layers[LyrFloat], x, y, &nx, &ny)))
+		if (!(node = wlr_scene_node_at(layers[LyrTile], x, y, &nx, &ny)))
+			return NULL;
+
+	return (Client *) node->data;
 }
 
 struct wlr_surface *
