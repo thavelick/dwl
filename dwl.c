@@ -1299,6 +1299,7 @@ mapnotify(struct wl_listener *listener, void *data)
 {
 	/* Called when the surface is mapped, or ready to display on-screen. */
 	Client *c = wl_container_of(listener, c, map);
+	struct wlr_scene_surface *wss;
 
 	if (client_is_unmanaged(c)) {
 		/* Insert this independent into independents lists. */
@@ -1306,17 +1307,21 @@ mapnotify(struct wl_listener *listener, void *data)
 		return;
 	}
 
-	/* Insert this client into client lists. */
-	wl_list_insert(&clients, &c->link);
-	wl_list_insert(&fstack, &c->flink);
-	wl_list_insert(&stack, &c->slink);
-
+	/* Initialize client geometry */
+	client_set_tiled(c, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
 	client_get_geometry(c, &c->geom);
 	c->geom.width += 2 * c->bw;
 	c->geom.height += 2 * c->bw;
 
-	/* Tell the client not to try anything fancy */
-	client_set_tiled(c, WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT);
+	/* Create scene node for this client */
+	c->scene = wlr_scene_node_create(&scene->node);
+	wss = wlr_scene_surface_create(c->scene, client_surface(c));
+	wlr_scene_node_set_position(&wss->node, c->bw, c->bw);
+
+	/* Insert this client into client lists. */
+	wl_list_insert(&clients, &c->link);
+	wl_list_insert(&fstack, &c->flink);
+	wl_list_insert(&stack, &c->slink);
 
 	/* Set initial monitor, tags, floating status, and focus */
 	applyrules(c);
@@ -1731,7 +1736,7 @@ void
 rendermon(struct wl_listener *listener, void *data)
 {
 	Client *c;
-	int render = 1;
+	int skip = 0;
 
 	/* This function is called every time an output is ready to display a frame,
 	 * generally at the output's refresh rate (e.g. 60Hz). */
@@ -1741,12 +1746,8 @@ rendermon(struct wl_listener *listener, void *data)
 	clock_gettime(CLOCK_MONOTONIC, &now);
 
 	/* Do not render if any XDG clients have an outstanding resize. */
-	wl_list_for_each(c, &stack, slink) {
-		if (c->resize) {
-			wlr_surface_send_frame_done(client_surface(c), &now);
-			render = 0;
-		}
-	}
+	wl_list_for_each(c, &stack, slink)
+		skip = skip || c->resize;
 
 	/* HACK: This loop is the simplest way to handle ephemeral pageflip
 	 * failures but probably not the best. Revisit if damage tracking is
@@ -1756,7 +1757,7 @@ rendermon(struct wl_listener *listener, void *data)
 		if (!wlr_output_attach_render(m->wlr_output, NULL))
 			return;
 
-		if (render) {
+		if (!skip) {
 			/* Begin the renderer (calls glViewport and some other GL sanity checks) */
 			wlr_renderer_begin(drw, m->wlr_output->width, m->wlr_output->height);
 			wlr_renderer_clear(drw, rootcolor);
@@ -1770,6 +1771,10 @@ rendermon(struct wl_listener *listener, void *data)
 			wlr_renderer_end(drw);
 		}
 	} while (!wlr_output_commit(m->wlr_output));
+
+	/* Let clients know a frame has been rendered */
+	wl_list_for_each(c, &stack, slink)
+		wlr_surface_send_frame_done(client_surface(c), &now);
 }
 
 void
@@ -1970,8 +1975,6 @@ setsel(struct wl_listener *listener, void *data)
 void
 setup(void)
 {
-	struct wlr_scene_rect *rect;
-
 	/* The Wayland display is managed by libwayland. It handles accepting
 	 * clients from the Unix socket, manging Wayland globals, and so on. */
 	dpy = wl_display_create();
@@ -1994,6 +1997,7 @@ setup(void)
 
 	/* Initialize the scene graph used to lay out windows */
 	scene = wlr_scene_create();
+	/* XXX just testing */
 	wlr_scene_node_set_position(
 			&wlr_scene_rect_create(&scene->node, 20, 20, (float[]) {1, 1, 0.7, 1})->node,
 			20, 20);
@@ -2289,6 +2293,7 @@ unmapnotify(struct wl_listener *listener, void *data)
 	setmon(c, NULL, 0);
 	wl_list_remove(&c->flink);
 	wl_list_remove(&c->slink);
+	wlr_scene_node_destroy(c->scene);
 }
 
 void
