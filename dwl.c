@@ -479,6 +479,7 @@ applyrules(Client *c)
 					mon = m;
 		}
 	}
+	wlr_scene_node_reparent(c->scene, layers[c->isfloating ? LyrFloat : LyrTile]);
 	setmon(c, mon, newtags);
 }
 
@@ -1793,6 +1794,7 @@ void
 setfloating(Client *c, int floating)
 {
 	c->isfloating = floating;
+	wlr_scene_node_reparent(c->scene, layers[c->isfloating ? LyrFloat : LyrTile]);
 	arrange(c->mon);
 }
 
