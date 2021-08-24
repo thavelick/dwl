@@ -60,7 +60,6 @@
 #define LENGTH(X)               (sizeof X / sizeof X[0])
 #define END(A)                  ((A) + LENGTH(A))
 #define TAGMASK                 ((1 << LENGTH(tags)) - 1)
-#define ROUND(X)                ((int)((X)+0.5))
 #define LISTEN(E, L, H)         wl_signal_add((E), ((L)->notify = (H), (L)))
 
 /* enums */
@@ -260,7 +259,6 @@ static void quitsignal(int signo);
 static void rendermon(struct wl_listener *listener, void *data);
 static void resize(Client *c, int x, int y, int w, int h, int interact);
 static void run(char *startup_cmd);
-static void scalebox(struct wlr_box *box, float scale);
 static Client *selclient(void);
 static void setcursor(struct wl_listener *listener, void *data);
 static void setpsel(struct wl_listener *listener, void *data);
@@ -1747,15 +1745,6 @@ run(char *startup_cmd)
 		kill(startup_pid, SIGTERM);
 		waitpid(startup_pid, NULL, 0);
 	}
-}
-
-void
-scalebox(struct wlr_box *box, float scale)
-{
-	box->width =  ROUND((box->x + box->width) * scale) -  ROUND(box->x * scale);
-	box->height = ROUND((box->y + box->height) * scale) - ROUND(box->y * scale);
-	box->x = ROUND(box->x * scale);
-	box->y = ROUND(box->y * scale);
 }
 
 Client *
