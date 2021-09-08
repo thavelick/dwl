@@ -92,6 +92,7 @@ typedef struct {
 	unsigned int type; /* XDGShell or X11* */
 	struct wlr_scene_node *scene;
 	struct wlr_scene_rect *border[4];
+	struct wlr_scene_node *scene_surface;
 	struct wl_list link;
 	struct wl_list flink;
 	union {
@@ -1294,12 +1295,16 @@ mapnotify(struct wl_listener *listener, void *data)
 {
 	/* Called when the surface is mapped, or ready to display on-screen. */
 	Client *c = wl_container_of(listener, c, map);
-	struct wlr_scene_node *scene_surface;
+	int i;
 
-	/* Create scene node for this client */
+	/* Create scene tree for this client and its border */
 	c->scene = &wlr_scene_tree_create(layers[LyrTile])->node;
-	scene_surface = wlr_scene_surface_tree_create(c->scene, client_surface(c));
-	scene_surface->data = c;
+	c->scene_surface = wlr_scene_surface_tree_create(c->scene, client_surface(c));
+	c->scene_surface->data = c;
+	for (i = 0; i < 4; i++) {
+		c->border[i] = wlr_scene_rect_create(c->scene, 0, 0, bordercolor);
+		c->border[i]->node.data = c;
+	}
 
 	if (client_is_unmanaged(c)) {
 		/* Floating, no border */
@@ -1315,18 +1320,6 @@ mapnotify(struct wl_listener *listener, void *data)
 	client_get_geometry(c, &c->geom);
 	c->geom.width += 2 * c->bw;
 	c->geom.height += 2 * c->bw;
-	wlr_scene_node_set_position(scene_surface, c->bw, c->bw);
-
-	/* Border (top, bottom, left, right) */
-	c->border[0] = wlr_scene_rect_create(c->scene, c->geom.width, c->bw, bordercolor);
-	c->border[1] = wlr_scene_rect_create(c->scene, c->geom.width, c->bw, bordercolor);
-	c->border[2] = wlr_scene_rect_create(c->scene, c->bw, c->geom.height - 2 * c->bw, bordercolor);
-	c->border[3] = wlr_scene_rect_create(c->scene, c->bw, c->geom.height - 2 * c->bw, bordercolor);
-	wlr_scene_node_set_position(&c->border[1]->node, 0, c->geom.height - c->bw);
-	wlr_scene_node_set_position(&c->border[2]->node, 0, c->bw);
-	wlr_scene_node_set_position(&c->border[3]->node, c->geom.width - c->bw, c->bw);
-	c->border[0]->node.data = c->border[1]->node.data =
-		c->border[2]->node.data = c->border[3]->node.data = c;
 
 	/* Insert this client into client lists. */
 	wl_list_insert(&clients, &c->link);
@@ -1334,6 +1327,7 @@ mapnotify(struct wl_listener *listener, void *data)
 
 	/* Set initial monitor, tags, floating status, and focus */
 	applyrules(c);
+	resize(c, c->geom.x, c->geom.y, c->geom.width, c->geom.height, 0);
 }
 
 void
@@ -1618,24 +1612,23 @@ rendermon(struct wl_listener *listener, void *data)
 void
 resize(Client *c, int x, int y, int w, int h, int interact)
 {
-	/*
-	 * Note that I took some shortcuts here. In a more fleshed-out
-	 * compositor, you'd wait for the client to prepare a buffer at
-	 * the new size, then commit any movement that was prepared.
-	 */
 	struct wlr_box *bbox = interact ? &sgeom : &c->mon->w;
 	c->geom.x = x;
 	c->geom.y = y;
 	c->geom.width = w;
 	c->geom.height = h;
 	applybounds(c, bbox);
+
+	/* Update scene-graph, including borders */
+	wlr_scene_node_set_position(c->scene, c->geom.x, c->geom.y);
+	wlr_scene_node_set_position(c->scene_surface, c->bw, c->bw);
 	wlr_scene_rect_set_size(c->border[0], c->geom.width, c->bw);
 	wlr_scene_rect_set_size(c->border[1], c->geom.width, c->bw);
 	wlr_scene_rect_set_size(c->border[2], c->bw, c->geom.height - 2 * c->bw);
 	wlr_scene_rect_set_size(c->border[3], c->bw, c->geom.height - 2 * c->bw);
 	wlr_scene_node_set_position(&c->border[1]->node, 0, c->geom.height - c->bw);
 	wlr_scene_node_set_position(&c->border[3]->node, c->geom.width - c->bw, c->bw);
-	wlr_scene_node_set_position(c->scene, c->geom.x, c->geom.y);
+
 	/* wlroots makes this a no-op if size hasn't changed */
 	c->resize = client_set_size(c, c->geom.width - 2 * c->bw,
 			c->geom.height - 2 * c->bw);
