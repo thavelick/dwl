@@ -1629,8 +1629,10 @@ resize(Client *c, int x, int y, int w, int h, int interact)
 	c->geom.width = w;
 	c->geom.height = h;
 	applybounds(c, bbox);
-	c->border[0]->width = c->border[1]->width = c->geom.width;
-	c->border[2]->height = c->border[3]->height = c->geom.height - 2 * c->bw;
+	wlr_scene_rect_set_size(c->border[0], c->geom.width, c->bw);
+	wlr_scene_rect_set_size(c->border[1], c->geom.width, c->bw);
+	wlr_scene_rect_set_size(c->border[2], c->bw, c->geom.height - 2 * c->bw);
+	wlr_scene_rect_set_size(c->border[3], c->bw, c->geom.height - 2 * c->bw);
 	wlr_scene_node_set_position(&c->border[1]->node, 0, c->geom.height - c->bw);
 	wlr_scene_node_set_position(&c->border[3]->node, c->geom.width - c->bw, c->bw);
 	wlr_scene_node_set_position(c->scene, c->geom.x, c->geom.y);
