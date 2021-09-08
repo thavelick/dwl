@@ -1020,7 +1020,7 @@ void
 setfullscreen(Client *c, int fullscreen)
 {
 	c->isfullscreen = fullscreen;
-	c->bw = (1 - fullscreen) * borderpx;
+	c->bw = fullscreen ? 0 : borderpx;
 	client_set_fullscreen(c, fullscreen);
 
 	if (fullscreen) {
@@ -1309,6 +1309,7 @@ mapnotify(struct wl_listener *listener, void *data)
 	if (client_is_unmanaged(c)) {
 		/* Floating, no border */
 		wlr_scene_node_reparent(c->scene, layers[LyrFloat]);
+		c->bw = 0;
 
 		/* Insert this independent into independents lists. */
 		wl_list_insert(&independents, &c->link);
