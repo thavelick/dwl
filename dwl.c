@@ -821,7 +821,6 @@ createmon(struct wl_listener *listener, void *data)
 	const MonitorRule *r;
 	Monitor *m = wlr_output->data = calloc(1, sizeof(*m));
 	m->wlr_output = wlr_output;
-	m->scene_output = wlr_scene_output_create(scene, wlr_output);
 
 	/* Initialize monitor state using configured rules */
 	for (size_t i = 0; i < LENGTH(m->layers); i++)
@@ -863,20 +862,8 @@ createmon(struct wl_listener *listener, void *data)
 	 * display, which Wayland clients can see to find out information about the
 	 * output (such as DPI, scale factor, manufacturer, etc).
 	 */
-	wlr_output_layout_add(output_layout, wlr_output, r->x, r->y);
-	sgeom = *wlr_output_layout_get_box(output_layout, NULL);
-
-	/* When adding monitors, the geometries of all monitors must be updated */
-	wl_list_for_each(m, &mons, link) {
-		/* The first monitor in the list is the most recently added */
-		Client *c;
-		wl_list_for_each(c, &clients, link) {
-			if (c->isfloating)
-				resize(c, c->geom.x + m->w.width, c->geom.y,
-						c->geom.width, c->geom.height, 0);
-		}
-		return;
-	}
+	m->scene_output = wlr_scene_output_create(scene, wlr_output);
+	wlr_output_layout_add_auto(output_layout, wlr_output);
 }
 
 void
