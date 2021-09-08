@@ -1633,7 +1633,7 @@ resize(Client *c, int x, int y, int w, int h, int interact)
 	c->border[2]->height = c->border[3]->height = c->geom.height - 2 * c->bw;
 	wlr_scene_node_set_position(&c->border[1]->node, 0, c->geom.height - c->bw);
 	wlr_scene_node_set_position(&c->border[3]->node, c->geom.width - c->bw, c->bw);
-	wlr_scene_node_set_position(c->scene, x, y);
+	wlr_scene_node_set_position(c->scene, c->geom.x, c->geom.y);
 	/* wlroots makes this a no-op if size hasn't changed */
 	c->resize = client_set_size(c, c->geom.width - 2 * c->bw,
 			c->geom.height - 2 * c->bw);
@@ -1777,7 +1777,7 @@ setmon(Client *c, Monitor *m, unsigned int newtags)
 	}
 	if (m) {
 		/* Make sure window actually overlaps with the monitor */
-		applybounds(c, &m->m);
+		resize(c, c->geom.x, c->geom.y, c->geom.width, c->geom.height, 0);
 		wlr_surface_send_enter(client_surface(c), m->wlr_output);
 		c->tags = newtags ? newtags : m->tagset[m->seltags]; /* assign tags of target monitor */
 		arrange(m);
